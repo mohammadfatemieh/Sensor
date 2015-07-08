@@ -111,6 +111,15 @@ int main(int argc, char** argv) {
 
         //RN4020Config();
 
+        //printf("U\n");
+        //__delay_ms(100);
+
+        //printf("X\n");
+        //__delay_ms(100);
+
+        //printf("Z\n");
+        //__delay_ms(100);
+
         //WaitButton();
         printf("GN\n");
         __delay_ms(100);
@@ -172,36 +181,34 @@ void RN4020Config(){
     WaitButton();
     // Set the device as a peripherial role, auto advertise
     printf("PZ\n");
-    __delay_ms(100);
+    __delay_ms(500);
 
-    WaitButton();
     // Set the device as a peripherial role, auto advertise
     printf("SR,20000000\n");
-    __delay_ms(100);
+    __delay_ms(500);
 
-    WaitButton();
     // Set the device to proved a privater service in the server role
     printf("SS,00000001\n");
-    __delay_ms(100);
+    __delay_ms(500);
 
-    WaitButton();
     // Set the UUID of the private service
     printf("PS,");
     printf(UUID);
     printf("\n");
-    __delay_ms(100);
+    __delay_ms(500);
 
-    WaitButton();
     // Define a private characterisitc having 2 bytes
     printf("PC,");
     printf(UUID);
-    printf(",08,02\n");
-    __delay_ms(100);
+    printf(",02,08\n");
+    __delay_ms(500);
 
-    WaitButton();
     // reboot
     printf("R,1\n");
-    __delay_ms(1000);
+    __delay_ms(2000);
+
+    printf("+\n");
+    __delay_ms(100);
 
 }
 
