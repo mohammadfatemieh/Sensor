@@ -14,7 +14,9 @@
 #define CHOLD 45            // Hold capacitor size in pF for CVD
 #define MAX_RX_BUFFER 40   // Maximum size for the RX buffer
 // GardenSense Private Service UUID is ACD63933-AE9C-393D-A313-F75B3E5F9A8E
-#define UUID "ACD63933AE9C393DA313F75B3E5F9A8E"  // GardenSense Private Service UUID
+#define UUID_PREFIX "ACD63933AE9C393DA313F75B3E5F9A8"  // GardenSense Private Service UUID PREFIX
+#define UUID_DATA "E"  // Last UUID character for Sensor Data Service
+#define UUID_MODE "F"  // Last UUID character for Sensor Mode Service
 
 void putch(char data);
 void SetupSleepTimer();
@@ -27,6 +29,8 @@ void PrintBuffer();
 
 int ReadCap(unsigned char sensorNumber);
 char * ReadLine(char * buffer);
+void ClearRXBuffer();
+void WaitRXBuffer();
 void PrintLines(void);
 
 static int CVD_Init = 0;
@@ -36,6 +40,8 @@ static unsigned char RXbufferOverflow;
 static unsigned char RXbufferHasNewline;
 
 static int printcounts = 0;
+
+static char timerCounts;
 
 /*
  * 
@@ -66,7 +72,7 @@ int main(int argc, char** argv) {
     ANSELAbits.ANSA2 = 0;       // Digital input
 
 
-    putch('+');
+    //putch('+');
 
     //Forever While Loop
     while(1){
@@ -90,60 +96,54 @@ int main(int argc, char** argv) {
         printf("Wait Button\n\r");
 
         WaitButton();
-
-        printf("Turning RN4020 On\n\r");
-        __delay_ms(500);
-        // WAKE_HW on RC5
-        PORTCbits.RC5 = 1;          // Wakeup Hardware
-        // WAKE_SW on RC4
-        __delay_ms(200);
-        PORTCbits.RC4 = 1;          // Wake Software
-        // CTS on RB6
-        PORTBbits.RB6 = 0;          // Clear to send
-        // MLDP on RA4 with yellow wire
-        PORTAbits.RA4 = 0;          // Set low for CMD mode
-
-        __delay_ms(500);
-        //PrintLines();
-
-        printf("+\n");
-        __delay_ms(100);
-
         //RN4020Config();
 
-        //printf("U\n");
-        //__delay_ms(100);
 
-        //printf("X\n");
-        //__delay_ms(100);
+        while(1){
 
-        //printf("Z\n");
-        //__delay_ms(100);
+            // Turn on LED while serving data
+            //PORTCbits.RC7 = 1;
 
-        //WaitButton();
-        printf("GN\n");
-        __delay_ms(100);
-        //PrintLines();
+            // WAKE_HW on RC5
+            PORTCbits.RC5 = 1;          // Wakeup Hardware
+            // WAKE_SW on RC4
+            __delay_ms(100);
+            PORTCbits.RC4 = 1;          // Wake Software
+            // CTS on RB6
+            PORTBbits.RB6 = 0;          // Clear to send
+            // MLDP on RA4 with yellow wire
+            PORTAbits.RA4 = 0;          // Set low for CMD mode
+            //printf("Turning RN4020 On\n\r");
 
-        //WaitButton();
-        printf("LS\n");
-        __delay_ms(100);
+            __delay_ms(500);
+            //PrintLines();
 
-        //WaitButton();
-        printf("GS\n");
-        __delay_ms(100);
+            ClearRXBuffer();
+            printf("+\n");
+            WaitRXBuffer();
+            // if the echo is now off, turn it back on.
+            if(RXbuffer[6] != 'n')
+                printf("+\n");
+            __delay_ms(100);
 
-        //WaitButton();
-        printf("D\n");
-        __delay_ms(100);
-
-        //cnt = 0;
-        while(1)
-        {
             //WaitButton();
+            //printf("GN\n");
+            //__delay_ms(100);
+            //PrintLines();
 
+            //printf("LS\n");
+            //__delay_ms(100);
+
+            //printf("GS\n");
+            //__delay_ms(100);
+
+            printf("D\n");
+            __delay_ms(100);
+
+            // Read the soil moisture and put it on the BTLE server
             printf("SUW,");
-            printf(UUID);
+            printf(UUID_PREFIX);
+            printf(UUID_DATA);
             printf(",");
             readADC = ReadCap(1);
             printf("%04x",readADC);
@@ -154,31 +154,71 @@ int main(int argc, char** argv) {
             readADC = ReadCap(7);
             printf("%04x",readADC);
             printf("\n");
-            __delay_ms(1000);
 
-            //printf("SUR,");
-            //printf(UUID);
-            //printf("\n");
+            // Wait for a disconnect to indicate the server read the data
+            // Or timeout after 8 seconds
+            int disconnect = 0;
+            ClearRXBuffer();
+            while(disconnect == 0 && timerCounts < 8){
+                // if there's data
+                if(RXbufferHasNewline > 0){
+                    // Check if it's "Connection End'
+                    if(RXbuffer[0] == 'C' && RXbuffer[1] == 'o' && RXbuffer[11] == 'E' )
+                        disconnect = 1;
+                    // Clear the incomming line
+                    ReadLine(NULL);
+                }
+            }
+            // Enter Deep Sleep Mode
+            printf("O\n");
+            //__delay_ms(100);
 
-            //cnt++;
+
+            // Turn off the Radio
+            //printf("Turning RN4020 Off\n\r");
+            // WAKE_HW on RC5
+            PORTCbits.RC5 = 0;          // Wakeup Hardware
+            // WAKE_SW on RC4
+            __delay_ms(100);
+            PORTCbits.RC4 = 0;          // Wake Software
+            // CTS on RB6
+            PORTBbits.RB6 = 0;          // Clear to send
+            // MLDP on RA4 with yellow wire
+            PORTAbits.RA4 = 0;          // Set low for CMD mode
+
+            // Turn off LED while sleeping
+            PORTCbits.RC7 = 0;
+
+            //  Sleep for a total of xx cycles
+            while(timerCounts < 45){
+                PORTCbits.RC6 = 0;
+                SLEEP();
+            }
+
+            timerCounts = 0;
+
         }
-
+        
         // Wait for response
         while(RXbufferHasNewline == 0)
         {
             NOP();
         }
 
-//        SLEEP();
+    //        SLEEP();
 
     }
-    
     return (EXIT_SUCCESS);
 }
 
 void RN4020Config(){
 
     WaitButton();
+
+    // Set the name
+    printf("SN,GardenSense\n");
+    __delay_ms(500);
+
     // Set the device as a peripherial role, auto advertise
     printf("PZ\n");
     __delay_ms(500);
@@ -188,19 +228,29 @@ void RN4020Config(){
     __delay_ms(500);
 
     // Set the device to proved a privater service in the server role
-    printf("SS,00000001\n");
+    //   along with the 'Device Information' and 'Battery' services
+    printf("SS,C0000001\n");
     __delay_ms(500);
 
     // Set the UUID of the private service
     printf("PS,");
-    printf(UUID);
+    printf(UUID_PREFIX);
+    printf(UUID_DATA);
     printf("\n");
     __delay_ms(500);
 
-    // Define a private characterisitc having 2 bytes
+    // Define a private characterisitc for sensor data having 8 bytes
     printf("PC,");
-    printf(UUID);
+    printf(UUID_PREFIX);
+    printf(UUID_DATA);
     printf(",02,08\n");
+    __delay_ms(500);
+
+    // Define a second private characterisitc for server control having 1 byte and write permissions
+    printf("PC,");
+    printf(UUID_PREFIX);
+    printf(UUID_MODE);
+    printf(",06,01\n");
     __delay_ms(500);
 
     // reboot
@@ -322,9 +372,10 @@ void WaitButton()
     __delay_ms(250);
 }
 
-void SetupUSART()
+void ClearRXBuffer()
 {
     unsigned char i = 0;
+
     // Clear the RX message buffer
     for(i=0; i<MAX_RX_BUFFER; i++)
     {
@@ -333,6 +384,12 @@ void SetupUSART()
     RXbufferOverflow = 0;   // Not overflowed
     RXbufferIndex = 0;      // Set index to the start
     RXbufferHasNewline = 0; // The buffer contains no newlines
+
+}
+
+void SetupUSART()
+{
+    ClearRXBuffer();
 
     // Set TX (RB7) port to an output
     TRISBbits.TRISB7 = 0;
@@ -372,6 +429,14 @@ void PrintLines(void)
         ReadLine(NULL);
     }
 
+}
+
+void WaitRXBuffer()
+{
+    while(RXbufferHasNewline == 0)
+        {
+            NOP();
+        }
 }
 
 char * ReadLine(char * buffer)
@@ -443,9 +508,12 @@ void SetupSleepTimer()
     T1CON = 0xFF;           // Low Frequency Oscillator 31 kHz, Prescaler 1:8
     PIE1bits.TMR1IE = 1;
     INTCONbits.PEIE = 1;
+    timerCounts = 0;
 
     // 3875 * 8 = 31,000 Cycles = 1 second delay
-    // Longest Sleep 0xFFFF = 524,244 / 31,000 = 16.91 seconds
+    // Longest Sleep 0xFFFF = 524,244 / 3875 = 16.91 seconds
+    // 15 seconds is 0xE30D
+    // TMR1 = 0xFFFF - E30D;
     TMR1 = 0xFFFF - 3875;
 
 }
@@ -453,24 +521,24 @@ void SetupSleepTimer()
 void SetupRN4020()
 {
     // WAKE_HW on RC5
+    ANSELCbits.ANSC5 = 0;       // Set to digital
     PORTCbits.RC5 = 0;          // Hardware Sleep
     TRISCbits.TRISC5 = 0;       // Set to output
-    ANSELCbits.ANSC5 = 0;       // Set to digital
     // WAKE_SW on RC4
+    ANSELCbits.ANSC4 = 0;       // Set to digital
     PORTCbits.RC4 = 0;          // Software Sleep
     TRISCbits.TRISC4 = 0;       // Set to output
-    ANSELCbits.ANSC4 = 0;       // Set to digital
     // CTS on RB6
+    ANSELBbits.ANSB6 = 0;       // Set to digital
     PORTBbits.RB6 = 0;          // Clear to send 0 to save power
     TRISBbits.TRISB6 = 0;       // Set to output
-    ANSELBbits.ANSB6 = 0;       // Set to digital
     // RTS on RB4
-    TRISBbits.TRISB4 = 1;       // Set to input
     ANSELBbits.ANSB4 = 0;       // Digital input
+    TRISBbits.TRISB4 = 1;       // Set to input
     // MLDP on RA4 with yellow wire
-    TRISAbits.TRISA4 = 0;       // Set to output
-    PORTAbits.RA4 = 0;          // Set low to save power
     ANSELAbits.ANSA4 = 0;       // Set to digital
+    PORTAbits.RA4 = 0;          // Set low to save power
+    TRISAbits.TRISA4 = 0;       // Set to output
    
 }
 
@@ -486,8 +554,17 @@ void interrupt SerialRxPinInterrupt()
     char c;
 
     if(PIR1bits.TMR1IF == 1){
+        // Toggle LED
+        if(PORTCbits.RC6 == 0)
+            PORTCbits.RC6 = 1;
+        //else
+        //    PORTCbits.RC6 = 0;
+
+        timerCounts = timerCounts + 1;
+
         // 3875 * 8 = 31,000 Cycles = 1 second delay
         // Longest Sleep 0xFFFF = 524,244 / 31,000 = 16.91 seconds
+        // 15 seconds is 0xE30D
         TMR1 = 0xFFFF - 3875;
 
         //putch('X');
@@ -499,7 +576,7 @@ void interrupt SerialRxPinInterrupt()
     // If it's a serial port RX interrupt
     if(PIR1bits.RCIF == 1){
         //putch('-');
-        PORTCbits.RC7 = 0;
+        //PORTCbits.RC7 = 0;
 
         // Read out any availible serial port data
         //   which automatically clears the Interrupt Flag
