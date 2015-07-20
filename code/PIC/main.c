@@ -17,6 +17,7 @@
 #define UUID_PREFIX "ACD63933AE9C393DA313F75B3E5F9A8"  // GardenSense Private Service UUID PREFIX
 #define UUID_DATA "E"  // Last UUID character for Sensor Data Service
 #define UUID_MODE "F"  // Last UUID character for Sensor Mode Service
+#define UUID_BAT  "B"  // Last UUID character for Sensor Data Service
 
 void putch(char data);
 void SetupSleepTimer();
@@ -30,11 +31,11 @@ void PrintBuffer();
 int ReadCap(unsigned char sensorNumber);
 char * ReadLine(char * buffer);
 void ClearRXBuffer();
-void WaitRXBuffer();
+char WaitRXBuffer(char ticks);
 void PrintLines(void);
 
 static int CVD_Init = 0;
-static char RXbuffer[MAX_RX_BUFFER];
+static unsigned char RXbuffer[MAX_RX_BUFFER];
 static unsigned char RXbufferIndex;
 static unsigned char RXbufferOverflow;
 static unsigned char RXbufferHasNewline;
@@ -49,7 +50,10 @@ static char timerCounts;
 int main(int argc, char** argv) {
 
     unsigned int cnt = 0;
+    unsigned char temp;
     unsigned int readADC = 0;
+    unsigned int readBat = 0;
+    unsigned char sleepCycles = 6;
     unsigned char buffer[30];
     float voltageRatio;
     float voltage;
@@ -70,6 +74,7 @@ int main(int argc, char** argv) {
     // Setup Port A2 Switch
     TRISAbits.TRISA2 = 1;
     ANSELAbits.ANSA2 = 0;       // Digital input
+
 
 
     //putch('+');
@@ -95,14 +100,44 @@ int main(int argc, char** argv) {
 
         printf("Wait Button\n\r");
 
-        WaitButton();
-        //RN4020Config();
+        // Configure the Sensor
+        if(1==0)
+        {
+            // WAKE_HW on RC5
+            PORTCbits.RC5 = 1;          // Wakeup Hardware
+            // WAKE_SW on RC4
+            __delay_ms(100);
+            PORTCbits.RC4 = 1;          // Wake Software
+            // CTS on RB6
+            PORTBbits.RB6 = 0;          // Clear to send
+            //printf("Turning RN4020 On\n\r");
 
+            WaitButton();
+
+            ClearRXBuffer();
+            printf("+\n");
+            WaitRXBuffer(1);
+            // if the echo is now off, turn it back on.
+            if(RXbuffer[6] != 'n')
+                printf("+\n");
+            __delay_ms(100);
+
+            RN4020Config();
+        }
 
         while(1){
 
             // Turn on LED while serving data
-            //PORTCbits.RC7 = 1;
+            PORTCbits.RC7 = 1;
+
+            ADCON1 = 0B1001000;     //VDD and VSS VREF
+            AD1CON0 = 0B01111101;   //Select channel FVR and turn on ADC
+            while(AD1CON0bits.GO == 1){
+            }
+            readBat = AAD1RES0>>6;
+
+            //SetupUSART();
+            ClearRXBuffer();
 
             // WAKE_HW on RC5
             PORTCbits.RC5 = 1;          // Wakeup Hardware
@@ -111,21 +146,36 @@ int main(int argc, char** argv) {
             PORTCbits.RC4 = 1;          // Wake Software
             // CTS on RB6
             PORTBbits.RB6 = 0;          // Clear to send
-            // MLDP on RA4 with yellow wire
-            PORTAbits.RA4 = 0;          // Set low for CMD mode
             //printf("Turning RN4020 On\n\r");
 
-            __delay_ms(500);
-            //PrintLines();
-
-            ClearRXBuffer();
-            printf("+\n");
-            WaitRXBuffer();
-            // if the echo is now off, turn it back on.
-            if(RXbuffer[6] != 'n')
-                printf("+\n");
+            // Wait for 'CMD', and check for shifted versions too
+            //PORTCbits.RC7 = 0;
+            if(WaitRXBuffer(1))
+            {
+                //printf("....IF - %d\n", PIR1bits.RCIF);
+                while(!((RXbuffer[0] == 'C' && RXbuffer[1] == 'M' && RXbuffer[2] == 'D') ||
+                        (RXbuffer[1] == 'C' && RXbuffer[2] == 'M' && RXbuffer[3] == 'D') ||
+                        (RXbuffer[2] == 'C' && RXbuffer[3] == 'M' && RXbuffer[4] == 'D')))
+                {
+                    //PrintBuffer();
+                    ReadLine(NULL);
+                    WaitRXBuffer(1);
+                }
+            } else {
+                printf("TIMEOUT!\n");
+            }
+            // Wait a bit to make sure we have all extra data and then clear the buffer
             __delay_ms(100);
+            ClearRXBuffer();
 
+            // Turn on the echo and check to make sure it's actually on
+            printf("+\n");
+            WaitRXBuffer(1);
+            // if the echo is now off, turn it back on.
+            if(RXbuffer[5] == 'O' && RXbuffer[6] == 'f' && RXbuffer[7] == 'f')
+                printf("+\n");
+
+            //ClearRXBuffer();
             //WaitButton();
             //printf("GN\n");
             //__delay_ms(100);
@@ -137,8 +187,11 @@ int main(int argc, char** argv) {
             //printf("GS\n");
             //__delay_ms(100);
 
+            printf("V\n");
+            //__delay_ms(100);
+
             printf("D\n");
-            __delay_ms(100);
+            //__delay_ms(100);
 
             // Read the soil moisture and put it on the BTLE server
             printf("SUW,");
@@ -155,16 +208,54 @@ int main(int argc, char** argv) {
             printf("%04x",readADC);
             printf("\n");
 
+            // Put the battery voltage on the BTLE server
+            printf("SUW,");
+            printf(UUID_PREFIX);
+            printf(UUID_BAT);
+            printf(",");
+            printf("%04x", readBat);
+            printf("\n");
+
+            // Put the battery voltage on the BTLE server
+            printf("SUW,");
+            printf(UUID_PREFIX);
+            printf(UUID_MODE);
+            printf(",");
+            printf("%02x", sleepCycles);
+            printf("\n");
+
+            __delay_ms(100);
+
             // Wait for a disconnect to indicate the server read the data
-            // Or timeout after 8 seconds
+            // Or timeout after 10 seconds
             int disconnect = 0;
             ClearRXBuffer();
-            while(disconnect == 0 && timerCounts < 8){
+            while(disconnect == 0 && timerCounts < 2){
                 // if there's data
                 if(RXbufferHasNewline > 0){
                     // Check if it's "Connection End'
                     if(RXbuffer[0] == 'C' && RXbuffer[1] == 'o' && RXbuffer[11] == 'E' )
                         disconnect = 1;
+                    if(RXbuffer[0] == 'W' && RXbuffer[1] == 'V')
+                    {
+                        if((RXbuffer[8] >= '0' && RXbuffer[8] <= '9') ||
+                           (RXbuffer[8] >= 'A' && RXbuffer[8] <= 'F'))
+                        {
+                            if(RXbuffer[8] < 'A')
+                                temp = RXbuffer[8]-'0';
+                            else
+                                temp = RXbuffer[8]-'A'+10;
+
+                            sleepCycles = temp * 16;
+
+                            if(RXbuffer[9] < 'A')
+                                temp = RXbuffer[9]-'0';
+                            else
+                                temp = RXbuffer[9]-'A'+10;
+
+                            sleepCycles = sleepCycles + temp;
+                        }
+                    }
                     // Clear the incomming line
                     ReadLine(NULL);
                 }
@@ -183,14 +274,12 @@ int main(int argc, char** argv) {
             PORTCbits.RC4 = 0;          // Wake Software
             // CTS on RB6
             PORTBbits.RB6 = 0;          // Clear to send
-            // MLDP on RA4 with yellow wire
-            PORTAbits.RA4 = 0;          // Set low for CMD mode
 
             // Turn off LED while sleeping
             PORTCbits.RC7 = 0;
 
-            //  Sleep for a total of xx cycles
-            while(timerCounts < 45){
+            //  Sleep for a total of sleepCycles * 5 seconds
+            while(timerCounts < sleepCycles){
                 PORTCbits.RC6 = 0;
                 SLEEP();
             }
@@ -199,14 +288,6 @@ int main(int argc, char** argv) {
 
         }
         
-        // Wait for response
-        while(RXbufferHasNewline == 0)
-        {
-            NOP();
-        }
-
-    //        SLEEP();
-
     }
     return (EXIT_SUCCESS);
 }
@@ -246,12 +327,20 @@ void RN4020Config(){
     printf(",02,08\n");
     __delay_ms(500);
 
-    // Define a second private characterisitc for server control having 1 byte and write permissions
+    // Define a second private characterisitc for battery status having 2 bytes 
+    printf("PC,");
+    printf(UUID_PREFIX);
+    printf(UUID_BAT);
+    printf(",02,02\n");
+    __delay_ms(500);
+
+    // Define a third private characterisitc for server control having 1 bytes and write permissions
     printf("PC,");
     printf(UUID_PREFIX);
     printf(UUID_MODE);
     printf(",06,01\n");
     __delay_ms(500);
+
 
     // reboot
     printf("R,1\n");
@@ -431,12 +520,20 @@ void PrintLines(void)
 
 }
 
-void WaitRXBuffer()
+char WaitRXBuffer(char ticks)
 {
-    while(RXbufferHasNewline == 0)
-        {
-            NOP();
-        }
+    // Set a timeout goal to ticks + 1 so we will wait at least ticks time
+    unsigned char timerGoal = timerCounts + ticks + 1;
+
+    while(RXbufferHasNewline == 0 && timerCounts < timerGoal)
+    {
+        NOP();
+    }
+
+    if(timerCounts == timerGoal)
+        return(0);      // Timed out
+    else
+        return(1);      // No Timeout
 }
 
 char * ReadLine(char * buffer)
@@ -446,48 +543,51 @@ char * ReadLine(char * buffer)
     //printf("\n\rA");
     //PrintBuffer();
 
-    // Turn off RX interrupts
-    RCIE = 0;
-
-    // Find the end of string and copy the string into a buffer if it exists
-    for(i=0; RXbuffer[i] != NULL && i < MAX_RX_BUFFER; i++)
+    if(RXbufferHasNewline > 0)
     {
-        //if(buffer != NULL)
-        //    buffer[i] = RXbuffer[i];
+        // Turn off RX interrupts
+        RCIE = 0;
+
+        // Find the end of string and copy the string into a buffer if it exists
+        for(i=0; RXbuffer[i] != NULL && i < MAX_RX_BUFFER; i++)
+        {
+            //if(buffer != NULL)
+            //    buffer[i] = RXbuffer[i];
+        }
+        // Advance i past the null at the end of the string
+        i = i + 1;
+
+        // If there is more than one item in the buffer
+        if(RXbufferIndex > i)
+            RXbufferIndex = RXbufferIndex - i;
+        else
+            RXbufferIndex = 0;
+
+        //printf("\n\rB");
+        //PrintBuffer();
+
+        // Erase the string by copying the buffer over.
+        for(j=i; j < MAX_RX_BUFFER; j++){
+            RXbuffer[j-i] = RXbuffer[j];
+        }
+
+        //printf("\n\rC");
+        //PrintBuffer();
+
+        // Fill in the end of the buffer with NULLs
+        for(j=MAX_RX_BUFFER-i; j < MAX_RX_BUFFER; j++){
+            RXbuffer[j] = NULL;
+        }
+
+        // There's now one message less in the buffer
+        RXbufferHasNewline = RXbufferHasNewline - 1;
+
+        //printf("\n\rD");
+        //PrintBuffer();
+
+        // Turn on RX interrupts
+        RCIE = 1;
     }
-    // Advance i past the null at the end of the string
-    i = i + 1;
-
-    // If there is more than one item in the buffer
-    if(RXbufferIndex > i )
-        RXbufferIndex = RXbufferIndex - i;
-    else
-        RXbufferIndex = 0;
-
-    //printf("\n\rB");
-    //PrintBuffer();
-
-    // Erase the string by copying the buffer over.
-    for(j=i; j < MAX_RX_BUFFER; j++){
-        RXbuffer[j-i] = RXbuffer[j];
-    }
-
-    //printf("\n\rC");
-    //PrintBuffer();
-
-    // Fill in the end of the buffer with NULLs
-    for(j=j-i+1; j < MAX_RX_BUFFER; j++){
-        RXbuffer[j] = NULL;
-    }
-
-    // There's now one message less in the buffer
-    RXbufferHasNewline = RXbufferHasNewline - 1;
-
-    //printf("\n\rD");
-    //PrintBuffer();
-
-    // Turn on RX interrupts
-    RCIE = 1;
 
     // Return the string that was passed in
     return buffer;
@@ -513,8 +613,9 @@ void SetupSleepTimer()
     // 3875 * 8 = 31,000 Cycles = 1 second delay
     // Longest Sleep 0xFFFF = 524,244 / 3875 = 16.91 seconds
     // 15 seconds is 0xE30D
+    //  5 seconds if 0x4BAF
     // TMR1 = 0xFFFF - E30D;
-    TMR1 = 0xFFFF - 3875;
+    TMR1 = 0xFFFF - 0x4BAF;
 
 }
 
@@ -536,9 +637,10 @@ void SetupRN4020()
     ANSELBbits.ANSB4 = 0;       // Digital input
     TRISBbits.TRISB4 = 1;       // Set to input
     // MLDP on RA4 with yellow wire
-    ANSELAbits.ANSA4 = 0;       // Set to digital
-    PORTAbits.RA4 = 0;          // Set low to save power
-    TRISAbits.TRISA4 = 0;       // Set to output
+    // MLDP is not tied to GND
+    //ANSELAbits.ANSA4 = 0;       // Set to digital
+    //PORTAbits.RA4 = 0;          // Set low to save power
+    //TRISAbits.TRISA4 = 0;       // Set to output
    
 }
 
@@ -564,42 +666,52 @@ void interrupt SerialRxPinInterrupt()
 
         // 3875 * 8 = 31,000 Cycles = 1 second delay
         // Longest Sleep 0xFFFF = 524,244 / 31,000 = 16.91 seconds
+        //  5 seconds if 0x4BAF
         // 15 seconds is 0xE30D
-        TMR1 = 0xFFFF - 3875;
+        TMR1 = 0xFFFF - 0x4BAF;
 
         //putch('X');
         //putch('\n');
         //putch('\r');
         PIR1bits.TMR1IF = 0;
+
     }
 
     // If it's a serial port RX interrupt
     if(PIR1bits.RCIF == 1){
         //putch('-');
-        //PORTCbits.RC7 = 0;
+        //PORTCbits.RC7 = 1;
 
         // Read out any availible serial port data
         //   which automatically clears the Interrupt Flag
         while(PIR1bits.RCIF == 1)
         {
-            PORTCbits.RC7 = 1;
+            //PORTCbits.RC7 = 1;
             c = RCREG;          // Read the byte from rx register
-            if(c != NULL){      // Don't accept NULLs
-                RXbuffer[RXbufferIndex] = c;
-                //putch(RXbuffer[RXbufferIndex]);
-                if(RXbuffer[RXbufferIndex]=='\r' || RXbuffer[RXbufferIndex]=='\n'){
-                    // Turn it into a null so the buffer can be used as a string
-                    RXbuffer[RXbufferIndex]=0;
-                    RXbufferHasNewline += 1;
-                }
-                // Don't advance the index on a NULL, unless 
-                //   we're past the start, and the previous charater isn't null
-                if(RXbuffer[RXbufferIndex] != NULL || (RXbufferIndex > 0 && RXbuffer[RXbufferIndex-1] != NULL)){  // Don't write two NULLs in a row
-                    if(RXbufferIndex < MAX_RX_BUFFER - 1)      // Only advance index to end
+
+            // Only populate the buffer if there's space in the buffer
+            //   if it's full RXbufferIndex points past the end!
+            if(RXbufferIndex < MAX_RX_BUFFER)
+            {
+                if(c != NULL){      // Don't accept NULLs
+                    RXbuffer[RXbufferIndex] = c;
+                    //putch(RXbuffer[RXbufferIndex]);
+                    // Turn end of line and the last character in the buffer into a NULL
+                    if(RXbuffer[RXbufferIndex]=='\r' || RXbuffer[RXbufferIndex]=='\n'
+                            || RXbufferIndex == MAX_RX_BUFFER - 1 ){
+                        // Turn it into a null so the buffer can be used as a string
+                        RXbuffer[RXbufferIndex]=0;
+                        RXbufferHasNewline += 1;
+                    }
+                    // Don't double NULL!
+                    // Don't advance the index on a NULL, unless
+                    //   we're past the start, and the previous charater isn't null
+                    if(RXbuffer[RXbufferIndex] != NULL || (RXbufferIndex > 0 && RXbuffer[RXbufferIndex-1] != NULL)){  // Don't write two NULLs in a row
                         RXbufferIndex++;
-                    else
-                        RXbufferOverflow = 1;
+                    }
                 }
+            } else {
+                RXbufferOverflow = 1;
             }
         }
 
