@@ -246,7 +246,10 @@ def on_collect(e):
 		if len(splitList) == 2 and splitList[0] == 'R' and len(splitList[1]) >= 3:
 			gotBatData = 1
 			readBat = int(splitList[1], 16)
-			Vbat = 2.048*1024/readBat
+			if readBat > 0:
+				Vbat = 2.048*1024/readBat
+			else:
+				Vbat = 0;
 			print "Battery Voltage: %1.2fV" % Vbat
 
 	# Get the timeout
