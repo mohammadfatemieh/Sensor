@@ -18,6 +18,8 @@
 #define UUID_DATA "E"  // Last UUID character for Sensor Data Service
 #define UUID_MODE "F"  // Last UUID character for Sensor Mode Service
 #define UUID_BAT  "B"  // Last UUID character for Sensor Data Service
+#define UUID_POW  "C"  // Last UUID character for Sensor Data Service
+#define UUID_TEMP "D"  // Last UUID character for Sensor Data Service
 
 void putch(char data);
 void SetupSleepTimer();
@@ -53,6 +55,7 @@ int main(int argc, char** argv) {
     unsigned char temp;
     unsigned int readADC = 0;
     unsigned int readBat = 0;
+    unsigned int readTemp = 0;
     unsigned char sleepCycles = 6;
     unsigned char buffer[30];
     float voltageRatio;
@@ -82,11 +85,6 @@ int main(int argc, char** argv) {
     //Forever While Loop
     while(1){
 
-        PORTCbits.RC6 = 1;
-        __delay_ms(50);
-        PORTCbits.RC6 = 0;
-        __delay_ms(200);
-
         /*for(cnt = 1; cnt < 9; cnt = cnt +2)
         {
             readADC = ReadCap(cnt);
@@ -98,46 +96,99 @@ int main(int argc, char** argv) {
             printf("S%d: %.1fpF  ", cnt, capacitance);
         }*/
 
-        printf("Wait Button\n\r");
-
-        // Configure the Sensor
-        if(1==0)
+        // Configure the Sensor if the button is pushed for 5 seconds
+        if(PORTAbits.RA2 == 1)
         {
-            // WAKE_HW on RC5
-            PORTCbits.RC5 = 1;          // Wakeup Hardware
-            // WAKE_SW on RC4
-            __delay_ms(100);
-            PORTCbits.RC4 = 1;          // Wake Software
-            // CTS on RB6
-            PORTBbits.RB6 = 0;          // Clear to send
-            //printf("Turning RN4020 On\n\r");
+            temp = 0;
+            PORTCbits.RC6 = 1;
+            for(cnt = 0; cnt < 40 && temp == 0; cnt++)
+            {
+                if(PORTAbits.RA2 == 0){
+                    temp = 1;
+                }
+                __delay_ms(125);
 
-            WaitButton();
+                PORTCbits.RC6 = ! PORTCbits.RC6;
+            }
 
-            ClearRXBuffer();
-            printf("+\n");
-            WaitRXBuffer(1);
-            // if the echo is now off, turn it back on.
-            if(RXbuffer[6] != 'n')
+            if(temp == 0){
+                ClearRXBuffer();
+
+                PORTCbits.RC6 = 1;
+
+                // WAKE_HW on RC5
+                PORTCbits.RC5 = 1;          // Wakeup Hardware
+                // WAKE_SW on RC4
+                __delay_ms(100);
+                PORTCbits.RC4 = 1;          // Wake Software
+                // CTS on RB6
+                PORTBbits.RB6 = 0;          // Clear to send
+                //printf("Turning RN4020 On\n\r");
+
+                // Wait for 'CMD', and check for shifted versions too
+                //PORTCbits.RC7 = 0;
+                if(WaitRXBuffer(1))
+                {
+                    //printf("....IF - %d\n", PIR1bits.RCIF);
+                    while(!((RXbuffer[0] == 'C' && RXbuffer[1] == 'M' && RXbuffer[2] == 'D') ||
+                            (RXbuffer[1] == 'C' && RXbuffer[2] == 'M' && RXbuffer[3] == 'D') ||
+                            (RXbuffer[2] == 'C' && RXbuffer[3] == 'M' && RXbuffer[4] == 'D')))
+                    {
+                        //PrintBuffer();
+                        ReadLine(NULL);
+                        WaitRXBuffer(1);
+                    }
+                } else {
+                    printf("TIMEOUT!\n");
+                }
+                // Wait a bit to make sure we have all extra data and then clear the buffer
+                __delay_ms(100);
+                ClearRXBuffer();
+
+                // Turn on the echo and check to make sure it's actually on
                 printf("+\n");
-            __delay_ms(100);
+                WaitRXBuffer(1);
+                // if the echo is now off, turn it back on.
+                if(RXbuffer[5] == 'O' && RXbuffer[6] == 'f' && RXbuffer[7] == 'f')
+                    printf("+\n");
 
-            RN4020Config();
+                __delay_ms(100);
+
+                RN4020Config();
+
+            }
+            
+            PORTCbits.RC6 = 0;
+
         }
 
         while(1){
 
-            // Turn on LED while serving data
-            PORTCbits.RC7 = 1;
+            FVRCONbits.TSEN = 1;    // Enable Temperature Sensor
+            FVRCONbits.TSRNG = 0;   // Low Voltage Range
 
-            ADCON1 = 0B1001000;     //VDD and VSS VREF
+            // Read the battery voltage by readign the FVR
+            ADCON1 = 0B1001000;     //VDD and VSS VREF  FOSC/8 = 8MHz/8 = 1MHz = 1us
             AD1CON0 = 0B01111101;   //Select channel FVR and turn on ADC
+            AAD1ACQ = 10;           //Acquisition Timer 10 us
+            AD1CON0bits.GO = 1;
             while(AD1CON0bits.GO == 1){
             }
             readBat = AAD1RES0>>6;
 
+            // Read the temperature
+            AD1CON0 = 0B01110101;   // Select channel temperature and turn on ADC
+            __delay_ms(1);            // Delay at least 200us
+            AD1CON0bits.GO = 1;
+            while(AD1CON0bits.GO == 1){
+            }
+            readTemp = AAD1RES0>>6;
+
             //SetupUSART();
             ClearRXBuffer();
+
+            // Turn on LED while serving data
+            PORTCbits.RC7 = 1;
 
             // WAKE_HW on RC5
             PORTCbits.RC5 = 1;          // Wakeup Hardware
@@ -294,8 +345,6 @@ int main(int argc, char** argv) {
 
 void RN4020Config(){
 
-    WaitButton();
-
     // Set the name
     printf("SN,GardenSense\n");
     __delay_ms(500);
@@ -327,20 +376,33 @@ void RN4020Config(){
     printf(",02,08\n");
     __delay_ms(500);
 
-    // Define a second private characterisitc for battery status having 2 bytes 
+    // Define private characterisitc for battery status having 2 bytes 
     printf("PC,");
     printf(UUID_PREFIX);
     printf(UUID_BAT);
     printf(",02,02\n");
     __delay_ms(500);
 
-    // Define a third private characterisitc for server control having 1 bytes and write permissions
+    // Define private characterisitc for server control having 1 bytes and write permissions
     printf("PC,");
     printf(UUID_PREFIX);
     printf(UUID_MODE);
     printf(",06,01\n");
     __delay_ms(500);
 
+    // Define private characterisitc for transmit power having 1 bytes and write permissions
+    printf("PC,");
+    printf(UUID_PREFIX);
+    printf(UUID_POW);
+    printf(",06,01\n");
+    __delay_ms(500);
+
+    // Define private characterisitc for temperature having 2 bytes
+    printf("PC,");
+    printf(UUID_PREFIX);
+    printf(UUID_TEMP);
+    printf(",02,02\n");
+    __delay_ms(500);
 
     // reboot
     printf("R,1\n");
@@ -402,7 +464,7 @@ int ReadCap(unsigned char sensorNumber)
         // NO PULLUPS ON PORT C
 
         //Initialize ADC and Hardware CVD
-        AADCON1 = 0B1001000;     //VDD and VSS VREF
+        AADCON1 = 0B1001000;     //VDD and VSS VREF  FOSC/8 = 8MHz/8 = 1MHz
         AAD1CH = 0B00000000;     //No secondary channel
         AAD2CH = 0B00000000;     //No secondary channel
         AAD1CON3 = 0B01000011;   //Double and inverted
@@ -450,12 +512,12 @@ int ReadCap(unsigned char sensorNumber)
 void WaitButton()
 {
      // Wait for button push
-    while(PORTAbits.RA2 == 0){
+    while(PORTAbits.RA2 == 1){
         NOP();
     }
     __delay_ms(250);
     // Wait for release
-    while(PORTAbits.RA2 == 1){
+    while(PORTAbits.RA2 == 0){
         NOP();
     }
     __delay_ms(250);
@@ -595,7 +657,7 @@ char * ReadLine(char * buffer)
 
 void SetupClock()
 {
-    // Set the oscillator for 500 kHz
+    // Set the oscillator for 8 MHz
     OSCCONbits.SPLLEN = 0;
     OSCCONbits.IRCF3 = 1;
     OSCCONbits.IRCF2 = 1;
