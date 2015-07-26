@@ -265,16 +265,18 @@ def on_collect(e):
 			sensorTimeout = int(splitList[1], 16) * 5
 			print "Sensor Timeout : %d sec" % sensorTimeout
 
+	# Read the timeout setpoint from the text file
 	fTimeout = open('timeout.txt', 'r')
 	line = fTimeout.readline()
 	timeout_setpoint = int(line.strip())
 	fTimeout.close()
 
-	# Set the timeout
-	btle.write('CUWV,' + PRIVATE_MODE_SERVICE + ',%02X' % timeout_setpoint, 'Write Timeout')
-	temp = None
-	while temp != '' and btle.connected == 'yes':
-		temp = btle.read()
+	# Set the timeout if we were able to read it and it's not at the setpoint 
+	if sensorTimeout > 0 and sensorTimeout != timeout_setpoint * 5:
+		btle.write('CUWV,' + PRIVATE_MODE_SERVICE + ',%02X' % timeout_setpoint, 'Write Timeout')
+		temp = None
+		while temp != '' and btle.connected == 'yes':
+			temp = btle.read()
 
 	if gotSensorData == 1:	
 		dataFile = open(MAC + '.txt', 'a') 
