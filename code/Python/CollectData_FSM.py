@@ -85,6 +85,7 @@ class RN4020:
 btle = RN4020('/dev/ttyUSB0')
 MAC = None
 MACIgnore = []
+DataPath = ""
 
 fsm = fysom.Fysom({
 	'events': [
@@ -111,6 +112,17 @@ def on_init(e):
 		line = fIgnore.readline()
 	fIgnore.close()
 	print MACIgnore
+
+	# Get the path to write the data to
+	fDataPath = open('data_path.txt', 'r')
+	line = fDataPath.readline()
+	while line != '':
+		if(len(line.strip()) > 0):
+			DataPath = line.strip()
+			line = ''
+		else:
+			line = fDataPath.readline()
+	fDataPath.close()
 	fsm.done_init()
 
 def on_scan(e):
@@ -279,7 +291,7 @@ def on_collect(e):
 			temp = btle.read()
 
 	if gotSensorData == 1:	
-		dataFile = open(MAC + '.txt', 'a') 
+		dataFile = open(DataPath + MAC + '.txt', 'a') 
 		print >> dataFile, "%f, %4d, %4d, %4d, %4d, %1.2f, %d" % (time.time(), sensor[0], sensor[1], sensor[2], sensor[3], Vbat, sensorTimeout)
 		dataFile.flush()
 		dataFile.close()
