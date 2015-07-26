@@ -103,6 +103,9 @@ def printstatechange(e):
  	if PRINT_STATES == 1:   print '\n======> event: %s, src: %s, dst: %s' % (e.event, e.src, e.dst)
 
 def on_init(e):
+	global MACIgnore
+	global DataPath
+
 	# Get the list of MAC address to ignore
 	fIgnore = open('ignore.txt', 'r')
 	line = fIgnore.readline()
