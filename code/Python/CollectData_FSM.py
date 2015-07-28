@@ -130,6 +130,7 @@ def on_init(e):
 
 def on_scan(e):
 	global MAC
+	global MACIgnore
 	foundMAC = 0
 	errorCount = 0
 	# Keep trying the scan until a device is found
@@ -202,7 +203,7 @@ def on_connect(e):
 
 	# If garden sense stick wasn't found, add the MAC to the ignore list
 	if foundGardenSenseService == 0:
-		if temp == 'END' and btle.connected == 1:  # If LC succeeded and we're still connected
+		if temp == 'END' and btle.connected == 'yes':  # If LC succeeded and we're still connected
 			# Add it to the ignore list on disk
 			fIgnore = open('ignore.txt', 'a')
 			fIgnore.write(MAC+'\n')
