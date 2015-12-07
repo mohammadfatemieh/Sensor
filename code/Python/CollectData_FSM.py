@@ -9,6 +9,7 @@ PRINT_STATES = 1
 
 PRIVATE_SERVICE = 'ACD63933AE9C393DA313F75B3E5F9A8E'
 PRIVATE_BAT_SERVICE = 'ACD63933AE9C393DA313F75B3E5F9A8B'
+PRIVATE_TEMP_SERVICE = 'ACD63933AE9C393DA313F75B3E5F9A8D'
 PRIVATE_MODE_SERVICE = 'ACD63933AE9C393DA313F75B3E5F9A8F'
 
 global fsm 
@@ -82,7 +83,7 @@ class RN4020:
 			if temp == '': return('TIMEOUT')
 
 
-btle = RN4020('/dev/ttyUSB0')
+btle = RN4020('/dev/ttyUSB1')
 MAC = None
 MACIgnore = []
 DataPath = ""
@@ -265,10 +266,28 @@ def on_collect(e):
 			gotBatData = 1
 			readBat = int(splitList[1], 16)
 			if readBat > 0:
-				Vbat = 2.048*1024/readBat
+				Vbat = 1.024*1023/readBat
 			else:
 				Vbat = 0;
 			print "Battery Voltage: %1.2fV" % Vbat
+
+	# Get the temperature
+	btle.write('CURV,' + PRIVATE_TEMP_SERVICE, 'Read Temperature')
+	gotTempData = 0
+	Temperature = 0
+	temp = None
+	while temp != '' and gotTempData == 0 and btle.connected == 'yes':
+		temp = btle.read()
+		splitList = temp.strip().strip('.').split(',')
+		if len(splitList) == 2 and splitList[0] == 'R' and len(splitList[1]) >= 3:
+			gotTempData = 1
+			readTemp = int(splitList[1], 16)
+			if readTemp > 0:
+				Temperature = readTemp
+			else:
+				Temperature = 0;
+			print "Temperature: %3.1f Degrees F" % Temperature
+
 
 	# Get the timeout
 	btle.write('CURV,' + PRIVATE_MODE_SERVICE, 'Read Timeout')
@@ -298,7 +317,7 @@ def on_collect(e):
 
 	if gotSensorData == 1:	
 		dataFile = open(DataPath + MAC + '.txt', 'a') 
-		print >> dataFile, "%f, %4d, %4d, %4d, %4d, %1.2f, %d" % (time.time(), sensor[0], sensor[1], sensor[2], sensor[3], Vbat, sensorTimeout)
+		print >> dataFile, "%f, %4d, %4d, %4d, %4d, %1.2f, %3.1f, %d" % (time.time(), sensor[0], sensor[1], sensor[2], sensor[3], Vbat, Temperature, sensorTimeout)
 		dataFile.flush()
 		dataFile.close()
 
