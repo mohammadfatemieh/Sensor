@@ -157,7 +157,7 @@ def on_scan(e):
 
 		btle.setTimeout(0.25)
 
-		if temp == 'ERR':
+		if temp == 'ERR' and btle.connected == 'yes':
 			btle.disconnect()
 			errorCount = errorCount + 1
 			if errorCount > 5:
