@@ -46,6 +46,8 @@ static int printcounts = 0;
 
 static char timerCounts;
 
+float batV = 0;
+
 /*
  * 
  */
@@ -57,7 +59,7 @@ int main(int argc, char** argv) {
     unsigned int readBat = 0;
     unsigned int readTemp = 0;
     unsigned char sleepCycles = 6;
-    unsigned char buffer[30];
+    unsigned char buffer[40];
     float voltageRatio;
     float voltage;
     float capacitance;
@@ -164,11 +166,14 @@ int main(int argc, char** argv) {
 
         while(1){
 
-            FVRCONbits.TSEN = 1;    // Enable Temperature Sensor
+/*            FVRCONbits.FVREN = 1;   // Enable the Voltage Reference
+            FVRCONbits.TSEN = 0;    // Enable Temperature Sensor
             FVRCONbits.TSRNG = 0;   // Low Voltage Range
+            FVRCONbits.ADFVR1 = 0;  // Fixed Voltage Reference is 1.024
+            FVRCONbits.ADFVR0 = 1;  // Fixed Voltage Reference is 1.024
 
-            // Read the battery voltage by readign the FVR
-            ADCON1 = 0B1001000;     //VDD and VSS VREF  FOSC/8 = 8MHz/8 = 1MHz = 1us
+            // Read the battery voltage by reading the FVR
+            ADCON1 = 0B01010000;    //VDD and VSS VREF  FOSC/16 = 8MHz/16 = 0.5MHz = 2us
             AD1CON0 = 0B01111101;   //Select channel FVR and turn on ADC
             AAD1ACQ = 10;           //Acquisition Timer 10 us
             AD1CON0bits.GO = 1;
@@ -183,6 +188,7 @@ int main(int argc, char** argv) {
             while(AD1CON0bits.GO == 1){
             }
             readTemp = AAD1RES0>>6;
+*/
 
             //SetupUSART();
             ClearRXBuffer();
@@ -259,6 +265,30 @@ int main(int argc, char** argv) {
             printf("%04x",readADC);
             printf("\n");
 
+            // Read the battery voltage by reading the FVR
+            ADCON1 = 0B11010000;    //VDD and VSS VREF  FOSC/16 = 8MHz/16 = 0.5MHz = 2us
+            FVRCON = 0B10100001;
+            AD2CON0 = 0B01111101;   //Select channel FVR and turn off ADC 2
+            //AAD1ACQ = 10;           //Acquisition Timer 10 us
+            __delay_ms(2);
+            AD2CON0bits.GO = 1;
+            while(AD2CON0bits.GO == 1){
+            }
+//                readBat = FVRCON;
+            //__delay_ms(2);
+            readBat = AD2RES0;
+
+            // Read the temperature
+            AD2CON0 = 0B01110101;   // Select channel temperature and turn on ADC
+            __delay_ms(2);            // Delay at least 200us
+            AD2CON0bits.GO = 1;
+            while(AD2CON0bits.GO == 1){
+            }
+            readTemp = AD2RES0;
+
+            AD2CON0 = 0B01110100;   // turn off ADC
+            FVRCON = 0B00000000;    // turn off FVR and TSEN
+
             // Put the battery voltage on the BTLE server
             printf("SUW,");
             printf(UUID_PREFIX);
@@ -267,7 +297,15 @@ int main(int argc, char** argv) {
             printf("%04x", readBat);
             printf("\n");
 
-            // Put the battery voltage on the BTLE server
+            // Put the temperature on the BTLE server
+            printf("SUW,");
+            printf(UUID_PREFIX);
+            printf(UUID_TEMP);
+            printf(",");
+            printf("%04x", readTemp);
+            printf("\n");
+
+            // Put the sleep cycles on the BTLE server
             printf("SUW,");
             printf(UUID_PREFIX);
             printf(UUID_MODE);
@@ -464,13 +502,11 @@ int ReadCap(unsigned char sensorNumber)
         // NO PULLUPS ON PORT C
 
         //Initialize ADC and Hardware CVD
-        AADCON1 = 0B1001000;     //VDD and VSS VREF  FOSC/8 = 8MHz/8 = 1MHz
-        AAD1CH = 0B00000000;     //No secondary channel
-        AAD2CH = 0B00000000;     //No secondary channel
-        AAD1CON3 = 0B01000011;   //Double and inverted
-        AAD2CON3 = 0B01000011;   //Double and inverted
-        AAD1PRE = 10;            //Pre-charge Timer
-        AAD2PRE = 10;            //Pre-charge Timer
+        AADCON1 = 0B11010000;     //VDD VREF  FOSC/16 = 8MHz/16 = 2us
+        AAD1CH =  0B00000000;     //No secondary channel
+        AAD2CH =  0B00000000;     //No secondary channel
+        AAD1CON3= 0B01000010;   //Double and inverted
+        AAD2CON3= 0B01000010;   //Double and inverted
         AAD1ACQ = 10;            //Acquisition Timer
         AAD2ACQ = 10;            //Acquisition Timer
         AAD1GRD = 0B00000000;    //Turn off Guard Rings
@@ -493,20 +529,27 @@ int ReadCap(unsigned char sensorNumber)
 
     if(sensorNumber == 1 || sensorNumber == 5)
     {
+        AAD1PRE = 10;            //Pre-charge Timer
         AD1CON0bits.GO = 1;
         // Wait for bit to clear
         while(AD1CON0bits.GO == 1){
         }
-        return AAD1RES0>>6;
-        
+        AAD1PRE = 0;             // Disable Pre-charge Timer.  Needed for FVR measuremts to work correctly for some reason
+        AAD1CON0 = 0B00110100;   // Turn off the ADC
+        return AAD1RES0;
+
     } else {
+        AAD2PRE = 10;            //Pre-charge Timer
         AD2CON0bits.GO = 1;
         // Wait for bit to clear
         while(AD2CON0bits.GO == 1){
         }
-        return AAD2RES0>>6;
+        AAD2PRE = 0;             // Disable Pre-charge Timer.  Needed for FVR measuremts to work correctly for some reason
+        AAD2CON0 = 0B00110000;   // Turn off the ADC
+        return AAD2RES0;
 
     }
+
 }
 
 void WaitButton()
