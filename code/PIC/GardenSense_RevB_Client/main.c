@@ -12,8 +12,8 @@
 
 #define _XTAL_FREQ 8000000 // The speed of the internal(or)external oscillator
 #define CHOLD 45           // Hold capacitor size in pF for CVD
-#define MAX_RX_BUFFER 40   // Maximum size for the RX buffer
-#define MAX_BUFFER 40      // Maximum size for the other buffer
+#define MAX_RX_BUFFER 50   // Maximum size for the RX buffer
+#define MAX_BUFFER 30      // Maximum size for the other buffer
 // GardenSense Private Service UUID is ACD63933-AE9C-393D-A313-F75B3E5F9A8E
 #define UUID_PREFIX "ACD63933AE9C393DA313F75B3E5F9A8"  // GardenSense Private Service UUID PREFIX
 #define UUID_BTID "1"  // Last UUID character for The BTLE ID of the Connected Sensor
@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
     unsigned int readADC = 0;
     unsigned int readBat = 0;
     unsigned int readTemp = 0;
-    unsigned char sleepCycles = 12;
+    unsigned char sleepCycles = 24;
     float voltageRatio;
     float voltage;
     float capacitance;
@@ -409,53 +409,56 @@ int main(int argc, char** argv) {
             printf(",");
             printf("%04x", readTemp);
             printf("\n");
-
-            // Put the sleep cycles on the BTLE server
-            //printf("SUW,");
-            //printf(UUID_PREFIX);
-            //printf(UUID_MODE);
-            //printf(",");
-            //printf("%02x", sleepCycles);
-            //printf("\n");
-
             __delay_ms(100);
 
-            // Wait for a disconnect to indicate the server read the data
-            // Or timeout after 10 seconds
-            /*
-            int disconnect = 0;
             ClearRXBuffer();
-            while(disconnect == 0 && timerCounts < 2){
-                // if there's data
-                if(RXbufferHasNewline > 0){
-                    // Check if it's "Connection End'
-                    if(RXbuffer[0] == 'C' && RXbuffer[1] == 'o' && RXbuffer[11] == 'E' )
-                        disconnect = 1;
-                    if(RXbuffer[0] == 'W' && RXbuffer[1] == 'V')
-                    {
-                        if((RXbuffer[8] >= '0' && RXbuffer[8] <= '9') ||
-                           (RXbuffer[8] >= 'A' && RXbuffer[8] <= 'F'))
-                        {
-                            if(RXbuffer[8] < 'A')
-                                temp = RXbuffer[8]-'0';
-                            else
-                                temp = RXbuffer[8]-'A'+10;
 
-                            sleepCycles = temp * 16;
+            // Read the sleep cycles from the BTLE server
+            printf("CURV,");
+            printf(UUID_PREFIX);
+            printf(UUID_MODE);
+            printf("\n");
+            __delay_ms(100);
 
-                            if(RXbuffer[9] < 'A')
-                                temp = RXbuffer[9]-'0';
-                            else
-                                temp = RXbuffer[9]-'A'+10;
+            temp = WaitRXBuffer(1);
+            ReadLine(buffer);
 
-                            sleepCycles = sleepCycles + temp;
-                        }
-                    }
-                    // Clear the incomming line
-                    ReadLine(NULL);
-                }
+            // Wait for the response "R,XX."
+            while(temp && !(buffer[0] == 'R' && buffer[1] == ',') )
+            {
+                //printf(",");
+                //putch('#');  printf(buffer);  putch('\n');
+                temp = WaitRXBuffer(1);
+                ReadLine(buffer);
+                //putch('#');  printf(buffer);  putch('\n');
             }
-            */
+            if(temp == 0){
+                printf("#TIMEOUT!\n");
+            }
+
+            ClearRXBuffer();
+
+            if((buffer[2] >= '0' && buffer[2] <= '9') ||
+               (buffer[2] >= 'A' && buffer[2] <= 'F'))
+            {
+                if(buffer[2] < 'A')
+                    temp = buffer[2]-'0';
+                else
+                    temp = buffer[2]-'A'+10;
+
+                sleepCycles = temp * 16;
+
+                if(buffer[3] < 'A')
+                    temp = buffer[3]-'0';
+                else
+                    temp = buffer[3]-'A'+10;
+
+                sleepCycles = sleepCycles + temp;
+            }
+
+            //printf("#tout=%d\n", sleepCycles);
+            __delay_ms(100);
+
             // Enter Deep Sleep Mode
             printf("O\n");
             //__delay_ms(100);
