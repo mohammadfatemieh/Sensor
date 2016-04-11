@@ -162,7 +162,7 @@ def on_read_data(e):
 			if splitList[1] == '000F':   # Check if it's the battery level
 				foundBattery = 1
 				battery = splitList[2].strip('.')
-			if splitList[1] == '000F':   # Check if it's the temperature
+			if splitList[1] == '0011':   # Check if it's the temperature
 				foundTemp = 1
 				temperature = splitList[2].strip('.')
 
