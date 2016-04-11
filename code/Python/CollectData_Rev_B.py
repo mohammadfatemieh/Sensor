@@ -157,14 +157,17 @@ def on_read_data(e):
 				foundBTA = 1
 				BTA = splitList[2].strip('.')
 			if splitList[1] == '000D':   # Check if it's the sensor data
-				foundData = 1
 				data = splitList[2]
+				if len(data) > 6:
+					foundData = 1
 			if splitList[1] == '000F':   # Check if it's the battery level
-				foundBattery = 1
 				battery = splitList[2].strip('.')
+				if len(battery) > 2:
+					foundBattery = 1
 			if splitList[1] == '0011':   # Check if it's the temperature
-				foundTemp = 1
 				temperature = splitList[2].strip('.')
+				if len(temperature) > 2:
+					foundTemp = 1
 
 	# If we time out and are still connected	
 	if btle.connected == 'yes':
@@ -198,7 +201,7 @@ def on_read_data(e):
 				cap[i] = 0
 		print "S0: %.1fpF  S1: %.1fpF  S2: %.1fpF  S3: %.1fpF  S4: %.1fpF  S5: %.1fpF  S6: %.1fpF  " % (cap[0], cap[1], cap[2], cap[3], cap[4], cap[5], cap[6])
 	
-
+		Vbat = 0
 		if foundBattery:
 			# Convert the battery voltage
 			readBat = int(battery, 16)
@@ -208,6 +211,7 @@ def on_read_data(e):
 				Vbat = 0;
 			print "Battery Voltage: %1.2fV" % Vbat
 
+		Temperature = 0
 		if foundTemp:
 			readTemp = int(temperature, 16)
 			if readTemp > 0:
