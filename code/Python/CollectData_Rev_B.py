@@ -35,6 +35,9 @@ class RN4020:
 		# If it is connected, disconnect
 		if(self.connected != "no"):
 			self.disconnect()
+
+		# Set the TX power level to the maximum setting
+		self.write('SP,7', 'Set Max TX Power')
 	
 	def read(self):
 		temp = self.ser.readline()
@@ -83,7 +86,14 @@ class RN4020:
 			if temp == '': return('TIMEOUT')
 
 
-btle = RN4020('/dev/ttyUSB2')
+# Read the btle serial port from the text file
+fPort = open('ttyport.txt', 'r')
+line = fPort.readline()
+BTLEport = line.strip()
+fPort.close()
+
+print "Opening Blue Tooth Device on %s...\n" % BTLEport
+btle = RN4020(BTLEport)
 MAC = None
 DataPath = ""
 
