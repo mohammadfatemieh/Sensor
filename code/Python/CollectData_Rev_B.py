@@ -39,7 +39,7 @@ class RN4020:
 		# Set the TX power level to the maximum setting
 		self.write('SP,7', 'Set Max TX Power')
 		while temp != '':
-			temp = btle.read().strip()
+			temp = self.read().strip()
 	
 	def read(self):
 		temp = self.ser.readline()
