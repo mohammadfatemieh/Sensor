@@ -141,11 +141,12 @@ def on_init(e):
 
 def on_wait_connect(e):
 	# Keep trying the scan until a device is found
-	btle.setTimeout(10)
+	btle.setTimeout(60)
 	temp = None
 	while temp != '' and temp != 'ERR' and btle.connected == 'no':
 		temp = btle.read().strip()
 
+	btle.setTimeout(0.5)
 	if btle.connected == 'yes':
 		fsm.connected()
 	else:
