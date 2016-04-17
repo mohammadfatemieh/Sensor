@@ -13,8 +13,12 @@ PC,ACD63933AE9C393DA313F75B3E5F9A8B,06,02
 PC,ACD63933AE9C393DA313F75B3E5F9A8D,06,02
 # Mode Service 1 byte, readable
 PC,ACD63933AE9C393DA313F75B3E5F9A8F,02,01
-# Switch Service 1 byte, readable
-PC,ACD63933AE9C393DA313F75B3E5F9A8A,02,01
+# Switch Command Service 8 bytes, readable
+#   6 Bytes BTA, 1 Byte Switch Time, 1 Byte Command Sequence Number
+PC,ACD63933AE9C393DA313F75B3E5F9A85,02,08
+# Switch Command Ack 2 bytes, writable
+#   1 Byte Switch Time Competed, 1 Byte Command Sequence Number
+PC,ACD63933AE9C393DA313F75B3E5F9A86,06,08
 # Power Service 1 byte, writable
 PC,ACD63933AE9C393DA313F75B3E5F9A8C,06,01
 R,1
