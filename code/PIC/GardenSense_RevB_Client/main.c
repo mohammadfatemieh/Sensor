@@ -14,14 +14,17 @@
 #define CHOLD 45           // Hold capacitor size in pF for CVD
 #define MAX_RX_BUFFER 50   // Maximum size for the RX buffer
 #define MAX_BUFFER 30      // Maximum size for the other buffer
+
 // GardenSense Private Service UUID is ACD63933-AE9C-393D-A313-F75B3E5F9A8E
 #define UUID_PREFIX "ACD63933AE9C393DA313F75B3E5F9A8"  // GardenSense Private Service UUID PREFIX
-#define UUID_BTID "1"  // Last UUID character for The BTLE ID of the Connected Sensor
-#define UUID_DATA "E"  // Last UUID character for Sensor Data Service
-#define UUID_MODE "F"  // Last UUID character for Sensor Mode Service
-#define UUID_BAT  "B"  // Last UUID character for Sensor Battery Service
-#define UUID_POW  "C"  // Last UUID character for Sensor Power Service
-#define UUID_TEMP "D"  // Last UUID character for Sensor Temperature Service
+#define UUID_BTID   "1"  // Last UUID character for The BTLE ID of the Connected Sensor
+#define UUID_SW_CMD "5"  // Last UUID character for Sensor Switch Service
+#define UUID_SW_ACK "6"  // Last UUID character for Sensor Switch Service
+#define UUID_DATA   "E"  // Last UUID character for Sensor Data Service
+#define UUID_MODE   "F"  // Last UUID character for Sensor Mode Service
+#define UUID_BAT    "B"  // Last UUID character for Sensor Battery Service
+#define UUID_POWER  "C"  // Last UUID character for Sensor Power Service
+#define UUID_TEMP   "D"  // Last UUID character for Sensor Temperature Service
 
 void putch(char data);
 void SetupSleepTimer();
@@ -38,6 +41,7 @@ char * ReadLine(char * buffer);
 void ClearRXBuffer();
 char WaitRXBuffer(char ticks);
 void PrintLines(void);
+void LogConnection(char success);
 
 static int CVD_Init = 0;
 static unsigned char RXbuffer[MAX_RX_BUFFER];
@@ -50,6 +54,9 @@ static unsigned char RXbufferHasNewline;
 
 unsigned char buffer[MAX_BUFFER];
 unsigned char BTA[14];
+
+unsigned char connectLog[10];
+unsigned char connectAttempt = 0;
 
 static int printcounts = 0;
 
@@ -68,7 +75,8 @@ int main(int argc, char** argv) {
     unsigned int readADC = 0;
     unsigned int readBat = 0;
     unsigned int readTemp = 0;
-    unsigned char sleepCycles = 24;
+    unsigned int txPower = 4;        // The transmit power from 0 to 7
+    unsigned char sleepCycles = 4;   // 15 second cycles * 4 = 1 mins
     float voltageRatio;
     float voltage;
     float capacitance;
@@ -88,10 +96,6 @@ int main(int argc, char** argv) {
     // Setup Port A2 Switch
     TRISAbits.TRISA2 = 1;
     ANSELAbits.ANSA2 = 0;       // Digital input
-
-
-
-    //putch('+');
 
     //Forever While Loop
     while(1){
@@ -200,6 +204,9 @@ int main(int argc, char** argv) {
             // Turn on LED while serving data
             //PORTBbits.RB6 = 1;
 
+            // Set TX (RB7) port to an output
+            TRISBbits.TRISB7 = 0;
+
             // WAKE_HW on RA5
             PORTAbits.RA5 = 1;          // Wakeup Hardware
             // WAKE_SW on RA4
@@ -263,6 +270,10 @@ int main(int argc, char** argv) {
             printf("V\n");
             __delay_ms(100);
 
+            // Set the TX power level
+            printf("SP,%d\n", txPower);
+            __delay_ms(100);
+
             ClearRXBuffer();
             printf("D\n");
             //__delay_ms(200);
@@ -314,155 +325,217 @@ int main(int argc, char** argv) {
 
             printf("E,0,001EC022A8BA\n");
 
-            temp = WaitRXBuffer(3);
+            temp = WaitRXBuffer(2);
             ReadLine(buffer);
 
-            // Wait for the response "Connected"
-            while(temp && !((buffer[0] == 'C' && buffer[1] == 'o' && buffer[2] == 'n')) )
-                    //(RXbuffer[1] == 'E' && RXbuffer[2] == 'c' && RXbuffer[3] == 'h') ||
-                    //(RXbuffer[2] == 'E' && RXbuffer[3] == 'c' && RXbuffer[4] == 'h')))
+            // Wait for the response "Con*"
+            while(temp && !(buffer[0] == 'C' && buffer[1] == 'o' && buffer[2] == 'n' ))
             {
                 //printf(",");
                 //putch('#');  printf(buffer);  putch('\n');
-                temp = WaitRXBuffer(3);
+                temp = WaitRXBuffer(2);
                 ReadLine(buffer);
                 //putch('#');  printf(buffer);  putch('\n');
             }
-            if(temp == 0){
-                printf("#TIMEOUT!\n");
-            }
 
-            __delay_ms(200);
-            ClearRXBuffer();
+            // No Connection: If we timed out OR we didn't get "Connected"
+            if(temp == 0 || !(buffer[0] == 'C' && buffer[1] == 'o' && buffer[2] == 'n' &&
+                            buffer[3] == 'n' && buffer[4] == 'e' && buffer[5] == 'c' &&
+                            buffer[6] == 't' && buffer[7] == 'e' && buffer[8] == 'd') ) {
 
-//            printf("LC\n");
-//            __delay_ms(1000);
+                if(temp == 0)
+                    printf("#TIMEOUT!\n");
+                
+                LogConnection(0);
 
-            // Put the device's BTLE ID on the BTLE server
-            printf("CUWV,");
-            printf(UUID_PREFIX);
-            printf(UUID_BTID);
-            printf(",");
-            printf(BTA);
-            printf("\n");
-            __delay_ms(20);
+                // Compute the total number of failures
+                temp = 0;
+                for(i=0; i<connectAttempt; i++){
+                    if(connectLog[i] == 0)
+                        temp = temp + 1;
+                }
 
-            // Read the soil moisture and put it on the BTLE server
-            printf("CUWV,");
-            printf(UUID_PREFIX);
-            printf(UUID_DATA);
-            printf(",");
-            readADC = ReadCap(1);
-            printf("%04x",readADC);
-            readADC = ReadCap(2);
-            printf("%04x",readADC);
-            readADC = ReadCap(3);
-            printf("%04x",readADC);
-            readADC = ReadCap(4);
-            printf("%04x",readADC);
-            readADC = ReadCap(5);
-            printf("%04x",readADC);
-            readADC = ReadCap(6);
-            printf("%04x",readADC);
-            readADC = ReadCap(7);
-            printf("%04x",readADC);
-            printf("\n");
-            __delay_ms(20);
+                // If there were two failures in a row
+                //  or there are 3 or more failures within the last 10 tries,
+                //  raise the power
+                if((connectAttempt > 1 && connectLog[0] + connectLog[1] == 0) || temp > 2){
+                    if(txPower < 7)
+                    {
+                        txPower = txPower + 1;
+                        // Restart the counter when the power changes
+                        connectAttempt = 0;
+                    }
 
-            // Read the battery voltage by reading the FVR
-            ADCON1 = 0B11010000;    //VDD and VSS VREF  FOSC/16 = 8MHz/16 = 0.5MHz = 2us
-            FVRCON = 0B10100001;
-            AD2CON0 = 0B01111101;   //Select channel FVR and turn off ADC 2
-            //AAD1ACQ = 10;           //Acquisition Timer 10 us
-            __delay_ms(2);
-            AD2CON0bits.GO = 1;
-            while(AD2CON0bits.GO == 1){
-            }
-//                readBat = FVRCON;
-            //__delay_ms(2);
-            readBat = AD2RES0;
+                }
 
-            // Read the temperature
-            AD2CON0 = 0B01110101;   // Select channel temperature and turn on ADC
-            __delay_ms(2);            // Delay at least 200us
-            AD2CON0bits.GO = 1;
-            while(AD2CON0bits.GO == 1){
-            }
-            readTemp = AD2RES0;
+                // We failed this time, so try connecting again in 1 minute
+                sleepCycles = 4;
 
-            AD2CON0 = 0B01110100;   // turn off ADC
-            FVRCON = 0B00000000;    // turn off FVR and TSEN
+                // If we have failed 10 times in a row and we're at max power
+                //   save power by not trying so often
+                if(txPower > 6 && connectAttempt > 10 && temp > 9)
+                    sleepCycles = 120;   // Try again in 15 mins
 
-            // Put the battery voltage on the BTLE server
-            printf("CUWV,");
-            printf(UUID_PREFIX);
-            printf(UUID_BAT);
-            printf(",");
-            printf("%04x", readBat);
-            printf("\n");
-            __delay_ms(20);
+            } else {  // Send the data if a connection was established
 
-            // Put the temperature on the BTLE server
-            printf("CUWV,");
-            printf(UUID_PREFIX);
-            printf(UUID_TEMP);
-            printf(",");
-            printf("%04x", readTemp);
-            printf("\n");
-            __delay_ms(100);
+                __delay_ms(200);
+                ClearRXBuffer();
 
-            ClearRXBuffer();
+    //            printf("LC\n");
+    //            __delay_ms(1000);
 
-            // Read the sleep cycles from the BTLE server
-            printf("CURV,");
-            printf(UUID_PREFIX);
-            printf(UUID_MODE);
-            printf("\n");
-            __delay_ms(100);
+                // Put the device's BTLE ID on the BTLE server
+                printf("CUWV,");
+                printf(UUID_PREFIX);
+                printf(UUID_BTID);
+                printf(",");
+                printf(BTA);
+                printf("\n");
+                __delay_ms(20);
 
-            temp = WaitRXBuffer(1);
-            ReadLine(buffer);
+                // Read the soil moisture and put it on the BTLE server
+                printf("CUWV,");
+                printf(UUID_PREFIX);
+                printf(UUID_DATA);
+                printf(",");
+                readADC = ReadCap(1);
+                printf("%04x",readADC);
+                readADC = ReadCap(2);
+                printf("%04x",readADC);
+                readADC = ReadCap(3);
+                printf("%04x",readADC);
+                readADC = ReadCap(4);
+                printf("%04x",readADC);
+                readADC = ReadCap(5);
+                printf("%04x",readADC);
+                readADC = ReadCap(6);
+                printf("%04x",readADC);
+                readADC = ReadCap(7);
+                printf("%04x",readADC);
+                printf("\n");
+                __delay_ms(20);
 
-            // Wait for the response "R,XX."
-            while(temp && !(buffer[0] == 'R' && buffer[1] == ',') )
-            {
-                //printf(",");
-                //putch('#');  printf(buffer);  putch('\n');
+                // Read the battery voltage by reading the FVR
+                ADCON1 = 0B11010000;    //VDD and VSS VREF  FOSC/16 = 8MHz/16 = 0.5MHz = 2us
+                FVRCON = 0B10100001;
+                AD2CON0 = 0B01111101;   //Select channel FVR and turn off ADC 2
+                //AAD1ACQ = 10;           //Acquisition Timer 10 us
+                __delay_ms(2);
+                AD2CON0bits.GO = 1;
+                while(AD2CON0bits.GO == 1){
+                }
+    //                readBat = FVRCON;
+                //__delay_ms(2);
+                readBat = AD2RES0;
+
+                // Read the temperature
+                AD2CON0 = 0B01110101;   // Select channel temperature and turn on ADC
+                __delay_ms(2);            // Delay at least 200us
+                AD2CON0bits.GO = 1;
+                while(AD2CON0bits.GO == 1){
+                }
+                readTemp = AD2RES0;
+
+                AD2CON0 = 0B01110100;   // turn off ADC
+                FVRCON = 0B00000000;    // turn off FVR and TSEN
+
+                // Put the battery voltage on the BTLE server
+                printf("CUWV,");
+                printf(UUID_PREFIX);
+                printf(UUID_BAT);
+                printf(",");
+                printf("%04x", readBat);
+                printf("\n");
+                __delay_ms(20);
+
+                // Put the temperature on the BTLE server
+                printf("CUWV,");
+                printf(UUID_PREFIX);
+                printf(UUID_TEMP);
+                printf(",");
+                printf("%04x", readTemp);
+                printf("\n");
+                __delay_ms(100);
+
+                // Put the TX power on the BTLE server
+                printf("CUWV,");
+                printf(UUID_PREFIX);
+                printf(UUID_POWER);
+                printf(",");
+                printf("%02x", txPower);
+                printf("\n");
+                __delay_ms(100);
+
+                ClearRXBuffer();
+
+                // Read the sleep cycles from the BTLE server
+                printf("CURV,");
+                printf(UUID_PREFIX);
+                printf(UUID_MODE);
+                printf("\n");
+                __delay_ms(100);
+
                 temp = WaitRXBuffer(1);
                 ReadLine(buffer);
-                //putch('#');  printf(buffer);  putch('\n');
+
+                // Wait for the response "R,XX."
+                while(temp && !(buffer[0] == 'R' && buffer[1] == ',') )
+                {
+                    //printf(",");
+                    //putch('#');  printf(buffer);  putch('\n');
+                    temp = WaitRXBuffer(1);
+                    ReadLine(buffer);
+                    //putch('#');  printf(buffer);  putch('\n');
+                }
+                if(temp == 0){
+                    printf("#TIMEOUT!\n");
+                }
+
+                ClearRXBuffer();
+
+                if((buffer[2] >= '0' && buffer[2] <= '9') ||
+                   (buffer[2] >= 'A' && buffer[2] <= 'F'))
+                {
+                    if(buffer[2] < 'A')
+                        temp = buffer[2]-'0';
+                    else
+                        temp = buffer[2]-'A'+10;
+
+                    sleepCycles = temp * 16;
+
+                    if(buffer[3] < 'A')
+                        temp = buffer[3]-'0';
+                    else
+                        temp = buffer[3]-'A'+10;
+
+                    sleepCycles = sleepCycles + temp;
+                }
+
+                LogConnection(1);
+
+                // Compute the total number of failures
+                temp = 0;
+                for(i=0; i<connectAttempt; i++){
+                    if(connectLog[i] == 0)
+                        temp = temp + 1;
+                }
+
+                // If there were no failures for a long time lower the power
+                if(connectAttempt == 10 && temp == 0){
+                    if(txPower > 4)
+                    {
+                        txPower = txPower - 1;
+                        // Restart the counter when the power changes
+                        connectAttempt = 0;
+                    }
+                }
+
             }
-            if(temp == 0){
-                printf("#TIMEOUT!\n");
-            }
 
-            ClearRXBuffer();
-
-            if((buffer[2] >= '0' && buffer[2] <= '9') ||
-               (buffer[2] >= 'A' && buffer[2] <= 'F'))
-            {
-                if(buffer[2] < 'A')
-                    temp = buffer[2]-'0';
-                else
-                    temp = buffer[2]-'A'+10;
-
-                sleepCycles = temp * 16;
-
-                if(buffer[3] < 'A')
-                    temp = buffer[3]-'0';
-                else
-                    temp = buffer[3]-'A'+10;
-
-                sleepCycles = sleepCycles + temp;
-            }
-
-            //printf("#tout=%d\n", sleepCycles);
             __delay_ms(100);
 
             // Enter Deep Sleep Mode
             printf("O\n");
-            //__delay_ms(100);
-
 
             // Turn off the Radio
             //printf("Turning RN4020 Off\n\r");
@@ -471,6 +544,9 @@ int main(int argc, char** argv) {
             // WAKE_SW on RA4
             __delay_ms(100);
             PORTAbits.RA4 = 0;          // Wake Software
+
+            // Set TX (RB7) port to an input to save power
+            //TRISBbits.TRISB7 = 1;
 
             // Turn off LED while sleeping
             PORTBbits.RB6 = 0;
@@ -487,6 +563,23 @@ int main(int argc, char** argv) {
         
     }
     return (EXIT_SUCCESS);
+}
+
+void LogConnection(char success)
+{
+    int i;
+
+    // Make room for another connection entry if needed
+    if(connectAttempt > 9){
+        for(i=0; i<9; i++){
+            connectLog[i] = connectLog[i+1];
+        }
+        connectAttempt = 9;
+    }
+
+    // Record the successfull connection attempt
+    connectLog[connectAttempt] = success;
+    connectAttempt = connectAttempt + 1;
 }
 
 void RN4020Config(){
@@ -773,7 +866,7 @@ void SetupSleepTimer()
     // 15 seconds is 0xE30D
     //  5 seconds if 0x4BAF
     // TMR1 = 0xFFFF - E30D;
-    TMR1 = 0xFFFF - 0x4BAF;
+    TMR1 = 0xFFFF - 0xE30D;
 
 }
 
@@ -815,7 +908,7 @@ void interrupt SerialRxPinInterrupt()
         // Longest Sleep 0xFFFF = 524,244 / 31,000 = 16.91 seconds
         //  5 seconds if 0x4BAF
         // 15 seconds is 0xE30D
-        TMR1 = 0xFFFF - 0x4BAF;
+        TMR1 = 0xFFFF - 0xE30D;
 
         //putch('X');
         //putch('\n');
