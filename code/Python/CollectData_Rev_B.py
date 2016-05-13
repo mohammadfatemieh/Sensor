@@ -118,17 +118,6 @@ def on_init(e):
 	global DataPath
 	global TimeoutSetpoint
 
-	# Read the timeout setpoint from the text file
-	fTimeout = open('timeout.txt', 'r')
-	line = fTimeout.readline()
-	TimeoutSetpoint = int(line.strip())
-	fTimeout.close()
-
-	btle.write('SUW,' + PRIVATE_MODE_SERVICE + ',%02X' % TimeoutSetpoint, 'Write Timeout')
-	temp = None
-	while temp != '' and temp !='ERR' and temp!='AOK':
-		temp = btle.read()
-
 	# Get the path to write the data to
 	fDataPath = open('data_path.txt', 'r')
 	line = fDataPath.readline()
@@ -143,6 +132,18 @@ def on_init(e):
 	fsm.done_init()
 
 def on_wait_connect(e):
+	# Read the timeout setpoint from the text file
+	fTimeout = open('timeout.txt', 'r')
+	line = fTimeout.readline()
+	TimeoutSetpoint = int(line.strip())
+	fTimeout.close()
+
+	# Write the timeout setpoint to the BTLE server
+	btle.write('SUW,' + PRIVATE_MODE_SERVICE + ',%02X' % TimeoutSetpoint, 'Write Timeout')
+	temp = None
+	while temp != '' and temp !='ERR' and temp!='AOK':
+		temp = btle.read()
+
 	# Keep trying the scan until a device is found
 	btle.setTimeout(60)
 	temp = None

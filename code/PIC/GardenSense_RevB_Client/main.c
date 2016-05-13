@@ -60,7 +60,7 @@ unsigned char connectAttempt = 0;
 
 static int printcounts = 0;
 
-static char timerCounts;
+static unsigned char timerCounts;
 
 float batV = 0;
 
@@ -304,7 +304,7 @@ int main(int argc, char** argv) {
 
             ClearRXBuffer();
             printf("F\n");
-            __delay_ms(500);
+            __delay_ms(200);
             // Read the echo
             temp = WaitRXBuffer(1);
             ReadLine(buffer);
@@ -378,7 +378,7 @@ int main(int argc, char** argv) {
 
             } else {  // Send the data if a connection was established
 
-                __delay_ms(200);
+                __delay_ms(100);
                 ClearRXBuffer();
 
     //            printf("LC\n");
@@ -391,7 +391,7 @@ int main(int argc, char** argv) {
                 printf(",");
                 printf(BTA);
                 printf("\n");
-                __delay_ms(20);
+                __delay_ms(10);
 
                 // Read the soil moisture and put it on the BTLE server
                 printf("CUWV,");
@@ -446,7 +446,7 @@ int main(int argc, char** argv) {
                 printf(",");
                 printf("%04x", readBat);
                 printf("\n");
-                __delay_ms(20);
+                __delay_ms(10);
 
                 // Put the temperature on the BTLE server
                 printf("CUWV,");
@@ -455,7 +455,7 @@ int main(int argc, char** argv) {
                 printf(",");
                 printf("%04x", readTemp);
                 printf("\n");
-                __delay_ms(100);
+                __delay_ms(10);
 
                 // Put the TX power on the BTLE server
                 printf("CUWV,");
@@ -464,7 +464,7 @@ int main(int argc, char** argv) {
                 printf(",");
                 printf("%02x", txPower);
                 printf("\n");
-                __delay_ms(100);
+                __delay_ms(10);
 
                 ClearRXBuffer();
 
@@ -473,7 +473,7 @@ int main(int argc, char** argv) {
                 printf(UUID_PREFIX);
                 printf(UUID_MODE);
                 printf("\n");
-                __delay_ms(100);
+                __delay_ms(10);
 
                 temp = WaitRXBuffer(1);
                 ReadLine(buffer);
@@ -530,9 +530,12 @@ int main(int argc, char** argv) {
                     }
                 }
 
+                // Disconnect
+                printf("K\n");
+
             }
 
-            __delay_ms(100);
+            __delay_ms(10);
 
             // Enter Deep Sleep Mode
             printf("O\n");
@@ -551,9 +554,14 @@ int main(int argc, char** argv) {
             // Turn off LED while sleeping
             PORTBbits.RB6 = 0;
 
+            printf("Sleeping for %d.\n", sleepCycles);
+
             //  Sleep for a total of sleepCycles * 5 seconds
             while(timerCounts < sleepCycles){
                 //PORTBbits.RB4 = 0;
+                //printf("%d ", timerCounts);
+                //__delay_ms(1);
+
                 SLEEP();
             }
 
